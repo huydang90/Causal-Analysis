@@ -1,0 +1,459 @@
+---
+title: "Naval Power Replication Project"
+author: "Dang Ngoc Huy"
+date: "05/10/2019"
+output:   
+  md_document:
+    variant: markdown_github
+---
+<center>
+
+## Replication for Paper: Naval power, endogeneity, and long- distance disputes
+
+</center>
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+Packages <- c("tidyverse", "haven", "dagitty", "ggdag", "janitor", "broom", "devtools", "AER", "lmtest", "plm", "summarytools", "stargazer", "ivprobit", "mice", "caret", "ggplot2", "dplyr", "ggplot2", "sjPlot", "ivpack", "nlme", "sjPlot")
+lapply(Packages, library, character.only = TRUE)
+
+```
+
+```{r, include=TRUE, eval = FALSE}
+
+Packages <- c("tidyverse", "haven", "dagitty", "ggdag", "janitor", "broom", "devtools", "AER", "lmtest", "plm", "summarytools", "stargazer", "ivprobit", "mice", "caret", "ggplot2", "dplyr", "ggplot2", "sjPlot", "ivpack", "nlme", "sjPlot")
+lapply(Packages, library, character.only = TRUE)
+
+```
+
+
+### I. Summary of the research: 
+
+The author focuses on the research question of whether increasing naval power would increase the likelihood of interstate conflicts. He intended to capture this causal effect by employing the empirical strategy of instrumental variable analysis, centering on two instruments: the length of a state's coastline and the proportion of urban population of a state’s total population. According to his reasoning and analysis, both of these instruments are individually correlated with a state's naval strength but not to its expectation of non-contiguous conflicts, and therefore, could serve as legitimate instruments for encapsulating the desired causal effect. The data utilized was combined from the  World Vector Shoreline data from the World Resources Institute (2000) (for the coastline length), and the Correlates of War National Material Capabilities project (for urban population data). Using this data and analysis strategy for states from 1885 to 2000, the author concludes that increasing naval strength has a positive and statistically significant effect on the likelihood of a non-contiguous militarized dispute, even when accounting for other factors such as status of the state as a major or minor naval power.  
+
+On the surface, these two instruments appear to be credible. However, the length of coastline might in fact exert an unknown influence on the probability of conflicts which might invalidate the causal interpretation of the model. This issue will be discussed further on the alternative analysis of the research. 
+
+### II. Replication of the research results: 
+
+#### Replicate Table 1 
+
+The replicated coefficients of the independant variables and covariates in model 1-4 are extremely close to the results of Table 1 of the paper. However, there is some small variations (the number of observations for each models in the replicated table and the research table are identical). There are some potential sources for this variation: 
+
+- Variables have different scales: the varations in the coefficients does not go away with feature scaling (both standardization and normalization methods) on the variables => not the source of variation;
+- Possible different algorithms between R and Stata: after studying the documentations on the ivprobit method between R and Stata, there seems to be no difference between the estimation steps and the mathematical model employed in ivprobit in these 2 languages => not the source of variation; 
+- It is possible that there are some further unspecified transformation of the data in Stata by the author which introduces the variation. 
+
+Replicated Models 5-6 are exactly as the models in the research paper.  
+
+```{r, warning = FALSE}
+
+#1. EXPLORE THE DATASET
+
+#load and explore data
+dataset <- read_dta("naval_rep_data.dta")%>% as.data.frame()
+dim(dataset)
+names(dataset)
+
+#2. PREPROCESS THE DATA
+
+#Listwise deletion of missing values
+dat <- dataset[complete.cases(dataset), ]
+dim(dat)
+
+#3. REPLICATE MODELS AND FIGURES:
+
+#MODEL 1: 
+
+#Select non-landlocked states from 1185 onwards
+df1 <- dat[dat$year >= 1885 & dat$landlocked ==0, ] 
+
+#run Model 1: 
+model1 <- ivprobit(ncmiddum ~ ncmidlag + polity2 + open + s_lead| ton10 | y_2000 + urbprop + ncmidlag + polity2 + open + s_lead, df1)
+
+#MODEL 2: 
+
+#Select on non-landlocked major naval states years from 1185 onwards 
+df2 <- dat[dat$year >= 1885 & dat$landlocked ==0 & dat$MajshipAlt > 0, ] 
+
+#Run Model 2
+model2 <- ivprobit(ncmiddum ~ ncmidlag + polity2 + open + s_lead| ton10 | y_2000 + urbprop + ncmidlag + polity2 + open + s_lead, df2)
+
+#MODEL 3: 
+
+#Select on non-landlocked minor naval states years from 1885 onwards 
+df3 <- dat[dat$year >= 1885 & dat$landlocked ==0 & dat$MajshipAlt == 0, ] 
+
+#Run Model 3: 
+model3 <- ivprobit(ncmiddum ~ ncmidlag + polity2 + open + s_lead| ton10 | y_2000 + urbprop + ncmidlag + polity2 + open + s_lead, df3)
+
+
+#MODEL 4: 
+
+#Select non-landlocked states from 1185 onwards
+df4 <- dat[dat$year >= 1885 & dat$landlocked ==0, ] 
+
+#Run Model 4
+model4 <- ivprobit(ncmiddum ~ ncmidlag + polity2 + open + s_lead| MajshipAlt | y_2000 + ncmidlag + urbprop + polity2 + open + s_lead, df4)
+
+#Create function to collect coefficients and standard erors of models
+create_table = function(table_)
+{
+    p_table = data.frame(Variables=NA, Values=NA)
+    for(i in 1:dim(table_)[1])
+    {
+        est_error = table_[i,1:2]
+        name = c(rownames(table_)[i], '') 
+        name_values = cbind(Variables=name, Values=est_error)
+        p_table = rbind(p_table, name_values)
+    }
+    rownames(p_table) = 1:dim(p_table)[1]
+    return(na.omit(p_table))
+}
+
+#FORMAT BEFORE CREATING TABLE IN STARGAZER
+
+#Apply function to models to acquire dataframe for stargazer to output table
+output1 <- create_table(summary(model1))
+output2 <- create_table(summary(model2))
+output3 <- create_table(summary(model3))
+output4 <- create_table(summary(model4))
+
+#Create empty rows for coefficients of tonnage and majorship 
+output1[nrow(output1)+2,] <- NA
+output2[nrow(output2)+2,] <- NA
+output3[nrow(output3)+2,] <- NA
+output4[nrow(output4)+2,] <- NA
+
+#Change position of Tonnage and Majorship rows: 
+output1 <- output1[c(11:14, 3:10, 1:2),] 
+output2 <- output2[c(11:14, 3:10, 1:2),] 
+output3 <- output3[c(11:14, 3:10, 1:2),] 
+output4 <- output4[c(13:14, 11:12, 3:10, 1:2),] 
+
+#Create dataframe with just the relevant coefficients and standard errors
+newdf <- data.frame(output1, output2, output3, output4)
+newdf <- newdf %>% select(-3, -5, -7)
+
+#Change names of columns: 
+names(newdf)[names(newdf) == "Values"] <- "Model 1: All states"
+names(newdf)[names(newdf) == "Values.1"] <- "Model 2: Major navies"
+names(newdf)[names(newdf) == "Values.2"] <- "Model 3: Minor navies"
+names(newdf)[names(newdf) == "Values.3"] <- "Model 4: MajShip IV"
+
+#Change values of dataframe from character to numeric
+newdf <- as.data.frame(sapply(newdf, as.numeric)) 
+newdf[complete.cases(newdf), ]
+
+#Round numeric decimals in dataframe to 4: 
+newdf <- newdf %>% 
+  mutate_if(is.numeric, round, digits = 4)
+
+#Add names of variables: 
+newdf[1,1] = "Tonnage"
+newdf[3,1] = "Major ships"
+newdf[5,1] = "Non-contig MID lag"
+newdf[7,1] = "Polity"
+newdf[9,1] = "Trade"
+newdf[11,1] = "Alliance portfolio"
+newdf[13,1] = "Constant"
+
+```
+
+```{r, results='asis'}
+#CREATE OUTPUT TABLE WITH STARGAZER
+stargazer(newdf, type = "html", 
+          summary = FALSE, 
+          title            = "Table 1. Instrument variable models: 1885–2000.",
+          keep.stat="n",
+          dep.var.caption  = "",
+          dep.var.labels = "")
+
+```
+
+
+#### Replicate Table 2 
+
+```{r, warning= FALSE}
+
+#MODEL 5
+
+#Select non-landlocked states from 1185 onwards
+df5 <- dat[dat$year >= 1885 & dat$landlocked ==0, ] 
+
+#Run Model 5
+model5 <- ivreg(ncmiddum ~ ton10 + ncmidlag + polity2 + open + s_lead | . - ton10 + y_2000 + urbprop, data = df5)
+summary(model5)
+
+
+#Model 6
+
+#Select non-landlocked states from 1185 onwards
+df6 <- dat[dat$year >= 1885 & dat$landlocked ==0, ] 
+
+#Run Model 6
+model6 <- ivreg(ncmiddum ~ MajshipAlt + ncmidlag + polity2 + open + s_lead | . - MajshipAlt + y_2000 + urbprop, data = df6)
+summary(model6)
+```
+
+```{r, results='asis'}
+#CREATE OUTPUT TABLE
+stargazer(model5, model6, type = "html", 
+          title            = "Table 2. Instrument diagnostics models.",
+          order=c("ton10", "MajshipAlt"),
+          covariate.labels = c("Tonnage", "Major ships", 
+                               "Non-contig MID lag", "Polity", "Trade",
+                               "Alliance portfolio"),
+          keep.stat="n",
+          dep.var.caption  = "",
+          dep.var.labels   = "",
+          column.labels = c("Model 5", "Model 6"))
+
+```
+
+
+#### Replicate Figure 1 
+
+The differences in the predicted probabilities of non-contiguous MID as tonnage/major ship increases in the replicated figures and those of the research paper is due to 2 factors: 
+
+- The variation between the coefficients of the replicated models and those of the paper as explained in the replication of Table 1; 
+
+- The predicted probabilities being estimated manually and thus not being able to include the effect of the 2 instrumental variables: y_2000 (length of coastline) and urbprop (proportion of urban population). 
+
+```{r, warning = FALSE} 
+#save coefficients of model 1
+betas1 <- coef(model1)
+
+#save the means of variables of interest
+ncmidlag_mean <- mean(df1$ncmidlag)
+polity2_mean <- mean(df1$polity2)
+open_mean <- mean(df1$open)
+s_lead_mean <- mean(df1$s_lead)
+
+#estimate predicted probabilities based on different level of tonnage 
+y1.1 <- betas1[1] + betas1[2]*ncmidlag_mean + betas1[3]*polity2_mean + betas1[4]*open_mean + betas1[5]*s_lead_mean + betas1[6]*3 
+pred_y1.1 <- pnorm(y1.1)
+
+y1.2 <- betas1[1] + betas1[2]*ncmidlag_mean + betas1[3]*polity2_mean + betas1[4]*open_mean + betas1[5]*s_lead_mean + betas1[6]*6
+pred_y1.2 <- pnorm(y1.2)
+probs <- exp(y1.2)/(1+exp(y1.2))
+
+y1.3 <- betas1[1] + betas1[2]*ncmidlag_mean + betas1[3]*polity2_mean + betas1[4]*open_mean + betas1[5]*s_lead_mean + betas1[6]*9
+pred_y1.3 <- pnorm(y1.3)
+
+y1.4 <- betas1[1] + betas1[2]*ncmidlag_mean + betas1[3]*polity2_mean + betas1[4]*open_mean + betas1[5]*s_lead_mean + betas1[6]*12
+pred_y1.4 <- pnorm(y1.4)
+
+y1.5 <- betas1[1] + betas1[2]*ncmidlag_mean + betas1[3]*polity2_mean + betas1[4]*open_mean + betas1[5]*s_lead_mean + betas1[6]*15
+pred_y1.5 <- pnorm(y1.5)
+
+y1.6 <- betas1[1] + betas1[2]*ncmidlag_mean + betas1[3]*polity2_mean + betas1[4]*open_mean + betas1[5]*s_lead_mean + betas1[6]*18
+pred_y1.6 <- pnorm(y1.6)
+
+y1.7 <- betas1[1] + betas1[2]*ncmidlag_mean + betas1[3]*polity2_mean + betas1[4]*open_mean + betas1[5]*s_lead_mean + betas1[6]*21
+pred_y1.7 <- pnorm(y1.7)
+
+y1.8 <- betas1[1] + betas1[2]*ncmidlag_mean + betas1[3]*polity2_mean + betas1[4]*open_mean + betas1[5]*s_lead_mean + betas1[6]*24
+pred_y1.8 <- pnorm(y1.8)
+
+y1.9 <- betas1[1] + betas1[2]*ncmidlag_mean + betas1[3]*polity2_mean + betas1[4]*open_mean + betas1[5]*s_lead_mean + betas1[6]*27
+pred_y1.9 <- pnorm(y1.9)
+
+y1.10 <- betas1[1] + betas1[2]*ncmidlag_mean + betas1[3]*polity2_mean + betas1[4]*open_mean + betas1[5]*s_lead_mean + betas1[6]*30
+pred_y1.10 <- pnorm(y1.10)
+
+y1.11 <- betas1[1] + betas1[2]*ncmidlag_mean + betas1[3]*polity2_mean + betas1[4]*open_mean + betas1[5]*s_lead_mean + betas1[6]*33
+pred_y1.11 <- pnorm(y1.11)
+
+y1.12 <- betas1[1] + betas1[2]*ncmidlag_mean + betas1[3]*polity2_mean + betas1[4]*open_mean + betas1[5]*s_lead_mean + betas1[6]*36
+pred_y1.12 <- pnorm(y1.12)
+
+y1.13 <- betas1[1] + betas1[2]*ncmidlag_mean + betas1[3]*polity2_mean + betas1[4]*open_mean + betas1[5]*s_lead_mean + betas1[6]*39
+pred_y1.13 <- pnorm(y1.13)
+
+#create dataframe to hold predicted probabilities of non-contiguous mid and tonnage
+df_fig1 <- data.frame("Mid" = c(pred_y1.1, pred_y1.2, pred_y1.3, pred_y1.4, pred_y1.5, pred_y1.6, pred_y1.7, pred_y1.8, pred_y1.9, pred_y1.10, pred_y1.11, pred_y1.12, pred_y1.13), "Tonnage" = seq(3, 39, 3))
+
+#plot figure 1 
+ggplot(df_fig1, aes(x = Tonnage, y = Mid)) +
+  geom_point() +
+  theme_bw() +
+  geom_line()+ 
+  labs(x = "Tonnage (ten thousands)", y = "Probability of Non-Contiguous Initiation", title = "Figure 1. Predicted probability of a non-contiguous MID as tonnage increases, 1885–2000")+ 
+  scale_x_continuous(breaks=seq(3, 39, 3))
+```
+
+
+#### Replicate Figure 2
+
+```{r, results='asis'}
+
+#save coefficients of model 1
+betas2 <- coef(model2)
+
+#save the means of variables of interest
+ncmidlag_mean2 <- mean(df2$ncmidlag)
+polity2_mean2 <- mean(df2$polity2)
+open_mean2 <- mean(df2$open)
+s_lead_mean2 <- mean(df2$s_lead)
+
+#estimate predicted probabilities based on different levels of Majorship 
+y2.1 <- betas2[1] + betas2[2]*ncmidlag_mean2 + betas2[3]*polity2_mean2 + betas2[4]*open_mean2 + betas2[5]*s_lead_mean2 + betas2[6]*0
+pred_y2.1 <- pnorm(y2.1)
+
+y2.2 <- betas2[1] + betas2[2]*ncmidlag_mean2 + betas2[3]*polity2_mean2 + betas2[4]*open_mean2 + betas2[5]*s_lead_mean2 + betas2[6]*1
+pred_y2.2 <- pnorm(y2.2)
+
+y2.3 <- betas2[1] + betas2[2]*ncmidlag_mean2 + betas2[3]*polity2_mean2 + betas2[4]*open_mean2 + betas2[5]*s_lead_mean2 + betas2[6]*2
+pred_y2.3 <- pnorm(y2.3)
+
+y2.4 <- betas2[1] + betas2[2]*ncmidlag_mean2 + betas2[3]*polity2_mean2 + betas2[4]*open_mean2 + betas2[5]*s_lead_mean2 + betas2[6]*3
+pred_y2.4 <- pnorm(y2.4)
+
+y2.5 <- betas2[1] + betas2[2]*ncmidlag_mean2 + betas2[3]*polity2_mean2 + betas2[4]*open_mean2 + betas2[5]*s_lead_mean2 + betas2[6]*4
+pred_y2.5 <- pnorm(y2.5)
+
+y2.6 <- betas2[1] + betas2[2]*ncmidlag_mean2 + betas2[3]*polity2_mean2 + betas2[4]*open_mean2 + betas2[5]*s_lead_mean2 + betas2[6]*6
+pred_y2.6 <- pnorm(y2.6)
+
+#create dataframe to hold predicted probabilities of non-contiguous mid and tonnage
+df_fig2 <- data.frame("Mid" = c(pred_y2.1, pred_y2.2, pred_y2.3, pred_y2.4, pred_y2.5, pred_y2.6), "MajShip" = seq(0, 5, 1))
+
+#plot figure 2
+ggplot(df_fig2, aes(x = MajShip, y = Mid)) +
+  geom_point() +
+  theme_bw() +
+  geom_line()+ 
+  labs(x = "Major Ships", y = "Probability of Non-Contiguous Initiation", title = "Figure 2. Predicted probability of a non-contiguous MID as major ships increases, 1885–2000.")
+
+```
+
+
+#### Create DAG of possible relationships of variables in Table 1 
+
+####1. Simplified DAG with the main variables of interest: 
+
+```{r}
+mid_dag <- dagify(ncmiddum ~ ton10 + MajshipAlt + polity2,
+                  ton10 ~ y_2000 + urbprop + polity2,
+                  MajshipAlt ~ y_2000 + urbprop + polity2,
+                  labels = c("ncmiddum" = "Non-contiguous MID",
+                             "ton10" = "Tonnage",
+                             "MajshipAlt" = "Major Ships",
+                             "y_2000" = "Coastline",
+                             "urbprop" = "Urban Proportion",
+                             "polity2" = "Potential Confounders"),
+                  exposure = "ton10",
+                  outcome = "ncmiddum")
+
+ggdag(mid_dag, text = FALSE, use_labels = "label")
+
+```
+
+
+#### 2. Full DAG with all confounders: 
+
+```{r}
+mid_dag <- dagify(ncmiddum ~ ton10 + MajshipAlt + polity2 + open + s_lead + ncmidlag,
+                  ton10 ~ y_2000 + urbprop + polity2 + open + s_lead  + ncmidlag,
+                  MajshipAlt ~ y_2000 + urbprop + polity2 + open + s_lead + ncmidlag,
+                  labels = c("ncmiddum" = "Non-contiguous MID",
+                             "ton10" = "Tonnage",
+                             "MajshipAlt" = "Major Ships",
+                             "y_2000" = "Coastline",
+                             "urbprop" = "Urban Proportion",
+                             "polity2" = "Polity",
+                             "open" = "Trade",
+                             "s_lead" = "Alliance Portfolio",
+                             "ncmidlag" = "Non-contig MID lag"),
+                  exposure = "ton10",
+                  outcome = "ncmiddum")
+
+ggdag(mid_dag, text = FALSE, use_labels = "label")
+```
+
+
+
+### III. Proposal for alternative relationships between variables
+
+The author's analysis of the link between a state's coastline length and its likelihood of engaging in interstate conflict is up for question and might invalidate the intended causal interpretation if it is used as an instrument. A state's coastline length, while on the surface, might seemingly be uncorrelated with that state's potential conflicts; it might perhaps in fact be the reason for other to invade or seek conflict to gain control of a state that possesses a long coastline. It can be argued that a state with a long coastline poses as one that has a strategic position, in both maritime economy, logistics and security. It stands to reason, therefore, that such advantage might be the siren call for other states to engage in conflict with that state to acquire dominion over such area. This narrative, thus, would invalidate the legitimacy of coastal length as an instrumental variable in the model proposed by the author.  
+
+Therefore, if we are to take into account coastline length as a potential confounder, we can include it as a control variable in the model. 
+
+When we rerun model 1-4 as model 7-10 below, controlling for coastline length, leaving urban proportion as the only instrument, the correlation between increasing the naval powers and the increasing likelihood of interstate conflict is still positive, however, the statistical significance is notably decreased and for model 8-10, it is no longer statistically significant. 
+
+```{r, warning = FALSE}
+
+#Run model 7, same as model 1 except coastline length is now a confounder
+model7 <- ivprobit(ncmiddum ~ ncmidlag + polity2 + open + s_lead + y_2000 | ton10 | urbprop + ncmidlag + polity2 + open + s_lead + y_2000, df1)
+
+#Run model 8, same as model 2 except coastline length is now a confounder
+model8 <- ivprobit(ncmiddum ~ ncmidlag + polity2 + open + s_lead + y_2000| ton10 | urbprop + ncmidlag + polity2 + open + s_lead + y_2000, df2)
+
+#Run model 9, same as model 3 except coastline length is now a confounder
+model9 <- ivprobit(ncmiddum ~ ncmidlag + polity2 + open + s_lead + y_2000| ton10 | urbprop + ncmidlag + polity2 + open + s_lead + y_2000, df3)
+
+#Run model 10, same as model 4 except coastline length is now a confounder
+model10 <- ivprobit(ncmiddum ~ ncmidlag + polity2 + open + s_lead + y_2000| MajshipAlt | ncmidlag + urbprop + polity2 + open + s_lead + y_2000, df4)
+
+
+#FORMAT BEFORE CREATING TABLE IN STARGAZER
+
+#Apply function to models to acquire dataframe for stargazer to output table
+output7 <- create_table(summary(model7))
+output8 <- create_table(summary(model8))
+output9 <- create_table(summary(model9))
+output10 <- create_table(summary(model10))
+
+#Create empty rows for coefficients of tonnage and majorship 
+output7[nrow(output1)+2,] <- NA
+output8[nrow(output2)+2,] <- NA
+output9[nrow(output3)+2,] <- NA
+output10[nrow(output4)+2,] <- NA
+
+#Change position of Tonnage and Majorship rows: 
+output7 <- output7[c(13:16, 3:12, 1:2),] 
+output8 <- output8[c(13:16, 3:12, 1:2),] 
+output9 <- output9[c(13:16, 3:12, 1:2),] 
+output10 <- output10[c(15:16, 13:14, 3:12, 1:2),] 
+
+#Create dataframe with just the relevant coefficients and standard errors
+newdf2 <- data.frame(output7, output8, output9, output10)
+newdf2 <- newdf2 %>% select(-3, -5, -7)
+
+#Change names of columns: 
+names(newdf2)[names(newdf2) == "Values"] <- "Model 7: All states"
+names(newdf2)[names(newdf2) == "Values.1"] <- "Model 8: Major navies"
+names(newdf2)[names(newdf2) == "Values.2"] <- "Model 9: Minor navies"
+names(newdf2)[names(newdf2) == "Values.3"] <- "Model 10: MajShip IV"
+
+#Change values of dataframe from character to numeric
+newdf2 <- as.data.frame(sapply(newdf2, as.numeric)) 
+newdf2[complete.cases(newdf2), ]
+
+#Round numeric decimals in dataframe to 4: 
+newdf2 <- newdf2 %>% 
+  mutate_if(is.numeric, round, digits = 4)
+
+#Add names of variables: 
+newdf2[1,1] = "Tonnage"
+newdf2[3,1] = "Major ships"
+newdf2[5,1] = "Non-contig MID lag"
+newdf2[7,1] = "Polity"
+newdf2[9,1] = "Trade"
+newdf2[11,1] = "Alliance portfolio"
+newdf2[13,1] = "Coastline"
+newdf2[15,1] = "Constant"
+```
+
+```{r, results='asis'}
+
+#CREATE OUTPUT TABLE WITH STARGAZER
+
+stargazer(newdf2, type = "html", 
+          summary = FALSE, 
+          title            = "Table 2. Alternative instrument variable models: 1885–2000.",
+          keep.stat="n",
+          dep.var.caption  = "",
+          dep.var.labels = "")
+```
